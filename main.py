@@ -1,7 +1,6 @@
 import asyncio
 from asyncio import sleep
 from configparser import ConfigParser
-from time import time
 
 from telethon import TelegramClient
 from telethon.errors import FloodWaitError, RPCError
@@ -10,12 +9,9 @@ from telethon.tl.functions.messages import CheckChatInviteRequest, ImportChatInv
 
 
 async def test_wait_time(client, request, wait_time, repetitions):
-    request_name = request.__class__.__name__
-    print("Starting test of", request_name)
     count = 0
     try:
         for i in range(repetitions):
-            start_time = time()
             try:
                 await client(request)
                 raise RPCError(request, "Success.")
@@ -28,16 +24,22 @@ async def test_wait_time(client, request, wait_time, repetitions):
         result = False, count, e.seconds
     else:
         result = True,
-    print("Test of", request_name, "finished. Result:", result)
+    print("Test of", request.__class__.__name__, "with wait time", wait_time, "finished. Result:", result)
     return result
 
 
 async def ascertain_wait_time(client, request, wait_time, repetitions, lowering_rate):
-    result = test_wait_time(client, request, wait_time, repetitions)
+    print("Starting test of", request.__class__.__name__)
+    result = await test_wait_time(client, request, wait_time, repetitions)
     if result[0]:
-        return ascertain_wait_time(client, request, repetitions, wait_time * (1 - lowering_rate), lowering_rate)
+        result_rec = await ascertain_wait_time(client, request, int(wait_time * (1 - lowering_rate)),
+                                               repetitions, lowering_rate)
+        if result_rec:
+            return result_rec
+        else:
+            return wait_time
     else:
-        return wait_time
+        return False
 
 
 async def main():
@@ -50,17 +52,15 @@ async def main():
                                   config['Telegram']['api_hash']).start()
 
     # Initialize the request settings (partially hardcoded)
-
     requests = (
         (CheckChatInviteRequest(config['Requests']['invite_hash']), 100, 20, .1),
         (ResolveUsernameRequest(config['Requests']['username']), 1, 5000, .1),  # 5000: real value unknown
-        (ImportChatInviteRequest(config['Requests']['invite_hash']), 90, 5), .1,
+        (ImportChatInviteRequest(config['Requests']['invite_hash']), 90, 5, .1)
     )
 
     # Execute the testing of all requests asynchronously
-    await sleep(800)
     counts = await asyncio.gather(*(
-        ascertain_wait_time(client, request[0], request[1], request[2], requests[3])
+        ascertain_wait_time(client, request[0], request[1], request[2], request[3])
         for request in requests
     ))
 
