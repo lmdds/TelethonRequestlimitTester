@@ -10,17 +10,17 @@ from telethon.tl.functions.contacts import ResolveUsernameRequest
 from telethon.tl.functions.messages import CheckChatInviteRequest, ImportChatInviteRequest
 
 
-async def test_wait_time(client, request, wait_time):
+async def test_wait_time(client, request, wait_time, repetitions):
     request_name = request.__class__.__name__
     print("Starting test of", request_name)
     count = 0
     execution_time = 0
     try:
-        while True:
+        for i in range(repetitions):
             start_time = time()
             try:
                 await client(request)
-                raise RPCError
+                raise RPCError(request, "Success.")
             except FloodWaitError:
                 raise
             except RPCError:
@@ -31,6 +31,7 @@ async def test_wait_time(client, request, wait_time):
         result = count, e.seconds + execution_time
         print("Test of", request_name, "finished. Result:", result)
         return result
+    return count, execution_time
 
 
 async def main():
@@ -43,14 +44,14 @@ async def main():
                                   config['Telegram']['api_hash']).start()
 
     requests = (
-        (CheckChatInviteRequest(config['Requests']['invite_hash']), 1),
-        (account.UpdateProfileRequest(first_name=config['Requests']['first_name']), 1),
-        (ResolveUsernameRequest(config['Requests']['username']), 1),
-        (ImportChatInviteRequest(config['Requests']['invite_hash']), 1),
+        (CheckChatInviteRequest(config['Requests']['invite_hash']), 1, 20),
+        (account.UpdateProfileRequest(first_name=config['Requests']['first_name']), 1, 100),
+        (ResolveUsernameRequest(config['Requests']['username']), 1, 5000),  # 5000: real value unknown
+        (ImportChatInviteRequest(config['Requests']['invite_hash']), 1, 5),
     )
 
     counts = await asyncio.gather(*(
-        test_wait_time(client, request[0], request[1])
+        test_wait_time(client, request[0], request[1], request[2])
         for request in requests
     ))
 
