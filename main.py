@@ -26,12 +26,13 @@ async def test_wait_time(client, request, wait_time, repetitions):
             except RPCError:
                 count += 1
                 await sleep(wait_time)
-                execution_time += time() - start_time
+
     except FloodWaitError as e:
-        result = count, e.seconds + execution_time
-        print("Test of", request_name, "finished. Result:", result)
-        return result
-    return count, execution_time
+        result = False, count, e.seconds + (time() - start_time)
+    else:
+        result = True,
+    print("Test of", request_name, "finished. Result:", result)
+    return result
 
 
 async def main():
@@ -44,10 +45,9 @@ async def main():
                                   config['Telegram']['api_hash']).start()
 
     requests = (
-        (CheckChatInviteRequest(config['Requests']['invite_hash']), 1, 20),
-        (account.UpdateProfileRequest(first_name=config['Requests']['first_name']), 1, 100),
+        (CheckChatInviteRequest(config['Requests']['invite_hash']), 80, 20),
         (ResolveUsernameRequest(config['Requests']['username']), 1, 5000),  # 5000: real value unknown
-        (ImportChatInviteRequest(config['Requests']['invite_hash']), 1, 5),
+        (ImportChatInviteRequest(config['Requests']['invite_hash']), 100, 5),
     )
 
     counts = await asyncio.gather(*(
@@ -57,8 +57,11 @@ async def main():
 
     print("\nResults:")
     for i in range(len(requests)):
-        print("Request:", requests[i][0].__class__.__name__, ", Wait Time:", requests[i][1],
-              ", Count:", counts[i][0], ", Flood Wait Time:", counts[i][1])
+        if counts[i][0]:
+            print("SUCCESS: Request:", requests[i][0].__class__.__name__, ", Wait Time:", requests[i][1])
+        else:
+            print("FAILED: Request:", requests[i][0].__class__.__name__, ", Wait Time:", requests[i][1],
+                  ", Count:", counts[i][1], ", Flood Wait Time:", counts[i][2])
 
 
 try:
