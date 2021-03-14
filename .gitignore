@@ -1,0 +1,8 @@
+# PyCharm Files
+venv/
+.idea
+
+#Programmgenerated/Used Files
+config.ini
+*.session
+*.session-journal
