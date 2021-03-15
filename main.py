@@ -17,15 +17,23 @@ RequestDict = {
 async def test_wait_time(client, request, wait_time, repetitions):
     count = 0
     try:
+        await client(request)
+    except FloodWaitError as e:
+        print("Initial wait time of "+request.__class__.__name__+":", e.seconds)
+        await sleep(e.seconds + 1)
+        count = -1
+    except RPCError:
+        pass
+    try:
         for i in range(repetitions):
             try:
+                count += 1
+                await sleep(wait_time)
                 await client(request)
-                raise RPCError(request, "Success.")
             except FloodWaitError:
                 raise
             except RPCError:
-                count += 1
-                await sleep(wait_time)
+                pass
     except FloodWaitError as e:
         result = False, count, e.seconds
     else:
@@ -36,22 +44,27 @@ async def test_wait_time(client, request, wait_time, repetitions):
 
 async def ascertain_wait_time(client, request, wait_time, repetitions, lowering_rate):
     name = request.__class__.__name__
-    print("Starting test of", name, "with wait time", wait_time, "seconds.")
-    result = await test_wait_time(client, request, wait_time, repetitions)
-    if result[0]:
-        new_wait_time = int(wait_time * (1 - lowering_rate))
-        if new_wait_time == wait_time:
-            print(name + ": former wait time = new wait time. Returning.")
-            return name, wait_time
-        else:
-            result_rec = await ascertain_wait_time(client, request, new_wait_time,
-                                                   repetitions, lowering_rate)
-        if result_rec[1]:
-            return result_rec
-        else:
-            return name, wait_time
+    print("Starting test of", name, "with a wait time of", wait_time,
+          "seconds. A successful run would take about", wait_time*repetitions, "seconds.")
+    try:
+        result = await test_wait_time(client, request, wait_time, repetitions)
+    except Exception as e:
+        print("Exception occurred at test of "+name+":"+e)
     else:
-        return name, False
+        if result[0]:
+            new_wait_time = int(wait_time * (1 - lowering_rate))
+            if new_wait_time == wait_time:
+                print(name + ": former wait time = new wait time. Returning.")
+                return name, wait_time
+            else:
+                result_rec = await ascertain_wait_time(client, request, new_wait_time,
+                                                       repetitions, lowering_rate)
+            if result_rec[1]:
+                return result_rec
+            else:
+                return name, wait_time
+        else:
+            return name, False
 
 
 async def main():
