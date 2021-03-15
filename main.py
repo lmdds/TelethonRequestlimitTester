@@ -1,11 +1,17 @@
 import asyncio
 from asyncio import sleep
-from configparser import ConfigParser
 
+from configobj import ConfigObj
 from telethon import TelegramClient
 from telethon.errors import FloodWaitError, RPCError
 from telethon.tl.functions.contacts import ResolveUsernameRequest
 from telethon.tl.functions.messages import CheckChatInviteRequest, ImportChatInviteRequest
+
+RequestDict = {
+    'ResolveUsernameRequest': ResolveUsernameRequest,
+    'ImportChatInviteRequest': ImportChatInviteRequest,
+    'CheckChatInviteRequest': CheckChatInviteRequest
+}
 
 
 async def test_wait_time(client, request, wait_time, repetitions):
@@ -29,50 +35,52 @@ async def test_wait_time(client, request, wait_time, repetitions):
 
 
 async def ascertain_wait_time(client, request, wait_time, repetitions, lowering_rate):
-    print("Starting test of", request.__class__.__name__)
+    name = request.__class__.__name__
+    print("Starting test of", name, "with wait time", wait_time, "seconds.")
     result = await test_wait_time(client, request, wait_time, repetitions)
     if result[0]:
-        result_rec = await ascertain_wait_time(client, request, int(wait_time * (1 - lowering_rate)),
-                                               repetitions, lowering_rate)
-        if result_rec:
+        new_wait_time = int(wait_time * (1 - lowering_rate))
+        if new_wait_time == wait_time:
+            print(name + ": former wait time = new wait time. Returning.")
+            return name, wait_time
+        else:
+            result_rec = await ascertain_wait_time(client, request, new_wait_time,
+                                                   repetitions, lowering_rate)
+        if result_rec[1]:
             return result_rec
         else:
-            return wait_time
+            return name, wait_time
     else:
-        return False
+        return name, False
 
 
 async def main():
     # Reading configs
-    config = ConfigParser()
-    config.read("config.ini")
-
+    config = ConfigObj("config.ini")
     # Creating client
     client = await TelegramClient(config['Telegram']['username'], int(config['Telegram']['api_id']),
                                   config['Telegram']['api_hash']).start()
 
-    # Initialize the request settings (partially hardcoded)
-    requests = (
-        (CheckChatInviteRequest(config['Requests']['invite_hash']), 100, 20, .1),
-        (ResolveUsernameRequest(config['Requests']['username']), 1, 5000, .1),  # 5000: real value unknown
-        (ImportChatInviteRequest(config['Requests']['invite_hash']), 90, 5, .1)
-    )
-
     # Execute the testing of all requests asynchronously
-    counts = await asyncio.gather(*(
-        ascertain_wait_time(client, request[0], request[1], request[2], request[3])
-        for request in requests
+    results = await asyncio.gather(*(
+        ascertain_wait_time(
+            client,
+            RequestDict[request](str(config['Requests'][request]['param'])),
+            int(config['Requests'][request]['wait_time']),
+            int(config['Requests'][request]['repetitions']),
+            float(config['Requests'][request]['lowering_rate'])
+        )
+        for request in config['Requests']
     ))
 
     # Print the results
     print("\nResults:")
-    for i in range(len(requests)):
-        if counts[i][0]:
-            print("SUCCESS: Request:", requests[i][0].__class__.__name__, ", Wait Time:", requests[i][1])
-        else:
-            print("FAILED: Request:", requests[i][0].__class__.__name__, ", Wait Time:", requests[i][1],
-                  ", Count:", counts[i][1], ", Flood Wait Time left:", counts[i][2])
+    for r in results:
+        print("Request:", r[0], ", Best wait time:", r[1])
 
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Keyboard interrupted.")
