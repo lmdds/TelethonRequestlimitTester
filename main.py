@@ -19,11 +19,14 @@ async def test_wait_time(client, request, wait_time, repetitions):
     try:
         await client(request)
     except FloodWaitError as e:
-        print("Initial wait time of "+request.__class__.__name__+":", e.seconds)
+        print("Initial wait time of " + request.__class__.__name__ + ": " +
+              str(e.seconds) + " (" + str(round(e.seconds / 3600, 1)) + " hours ).")
         await sleep(e.seconds + 1)
+        print("Starting now " + request.__class__.__name__ + ".")
         count = -1
     except RPCError:
         pass
+
     try:
         for i in range(repetitions):
             try:
@@ -42,29 +45,43 @@ async def test_wait_time(client, request, wait_time, repetitions):
     return result
 
 
+async def start_ascertain_wait_time(client, request, wait_time, repetitions, lowering_rate):
+    name = request.__class__.__name__
+    try:
+        result = await ascertain_wait_time(client, request, wait_time, repetitions, lowering_rate)
+    except Exception as e:
+        print("Exception occurred at test of " + name + ": " + e.__str__())
+        return name, False
+
+    else:
+        if result[1]:
+            return result
+        else:
+            print("Restarting with twice the wait time.")
+            return await start_ascertain_wait_time(client, request, wait_time * 2, repetitions, lowering_rate)
+
+
 async def ascertain_wait_time(client, request, wait_time, repetitions, lowering_rate):
     name = request.__class__.__name__
     print("Starting test of", name, "with a wait time of", wait_time,
-          "seconds. A successful run would take about", wait_time*repetitions, "seconds.")
-    try:
-        result = await test_wait_time(client, request, wait_time, repetitions)
-    except Exception as e:
-        print("Exception occurred at test of "+name+":"+e)
-    else:
-        if result[0]:
-            new_wait_time = int(wait_time * (1 - lowering_rate))
-            if new_wait_time == wait_time:
-                print(name + ": former wait time = new wait time. Returning.")
-                return name, wait_time
-            else:
-                result_rec = await ascertain_wait_time(client, request, new_wait_time,
-                                                       repetitions, lowering_rate)
-            if result_rec[1]:
-                return result_rec
-            else:
-                return name, wait_time
+          "seconds. A successful run would take about", round(wait_time * repetitions / 3600, 1), "hours.")
+
+    result = await test_wait_time(client, request, wait_time, repetitions)
+
+    if result[0]:
+        new_wait_time = int(wait_time * (1 - lowering_rate))
+        if new_wait_time == wait_time:
+            print(name + ": former wait time = new wait time. Returning.")
+            return name, wait_time
         else:
-            return name, False
+            result_rec = await ascertain_wait_time(client, request, new_wait_time,
+                                                   repetitions, lowering_rate)
+        if result_rec[1]:
+            return result_rec
+        else:
+            return name, wait_time
+    else:
+        return name, False
 
 
 async def main():
@@ -76,7 +93,7 @@ async def main():
 
     # Execute the testing of all requests asynchronously
     results = await asyncio.gather(*(
-        ascertain_wait_time(
+        start_ascertain_wait_time(
             client,
             RequestDict[request](str(config['Requests'][request]['param'])),
             int(config['Requests'][request]['wait_time']),
