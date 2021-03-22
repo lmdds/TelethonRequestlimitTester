@@ -1,7 +1,9 @@
 import asyncio
+import logging.config
 from asyncio import sleep
 
-from configobj import ConfigObj
+import yaml
+
 from telethon import TelegramClient
 from telethon.errors import FloodWaitError, RPCError
 from telethon.tl.functions.contacts import ResolveUsernameRequest
@@ -15,14 +17,14 @@ RequestDict = {
 
 
 async def test_wait_time(client, request, wait_time, repetitions):
+    name = request.__class__.__name__
     count = 0
     try:
         await client(request)
     except FloodWaitError as e:
-        print("Initial wait time of " + request.__class__.__name__ + ": " +
-              str(e.seconds) + " (" + str(round(e.seconds / 3600, 1)) + " hours ).")
+        logging.info(f"Initial wait time of {name}: {e.seconds} ({round(e.seconds / 3600, 1)} hours ).")
         await sleep(e.seconds + 1)
-        print("Starting now " + request.__class__.__name__ + ".")
+        logging.info(f"Starting now {name}.")
         count = -1
     except RPCError:
         pass
@@ -41,37 +43,21 @@ async def test_wait_time(client, request, wait_time, repetitions):
         result = False, count, e.seconds
     else:
         result = True,
-    print("Test of", request.__class__.__name__, "with wait time", wait_time, "finished. Result:", result)
+    logging.info(f"Test of {request.__class__.__name__} with wait time {wait_time} finished. Result: {result}")
     return result
-
-
-async def start_ascertain_wait_time(client, request, wait_time, repetitions, lowering_rate):
-    name = request.__class__.__name__
-    try:
-        result = await ascertain_wait_time(client, request, wait_time, repetitions, lowering_rate)
-    except Exception as e:
-        print("Exception occurred at test of " + name + ": " + e.__str__())
-        return name, False
-
-    else:
-        if result[1]:
-            return result
-        else:
-            print("Restarting with twice the wait time.")
-            return await start_ascertain_wait_time(client, request, wait_time * 2, repetitions, lowering_rate)
 
 
 async def ascertain_wait_time(client, request, wait_time, repetitions, lowering_rate):
     name = request.__class__.__name__
-    print("Starting test of", name, "with a wait time of", wait_time,
-          "seconds. A successful run would take about", round(wait_time * repetitions / 3600, 1), "hours.")
+    logging.info(f"Starting test of {name} with a wait time of {wait_time } seconds. "
+                 f"A successful run would take about {round(wait_time * repetitions / 3600, 1)} hours.")
 
     result = await test_wait_time(client, request, wait_time, repetitions)
 
     if result[0]:
         new_wait_time = int(wait_time * (1 - lowering_rate))
         if new_wait_time == wait_time:
-            print(name + ": former wait time = new wait time. Returning.")
+            logging.info(f"{name}: former wait time = new wait time. Returning.")
             return name, wait_time
         else:
             result_rec = await ascertain_wait_time(client, request, new_wait_time,
@@ -84,33 +70,53 @@ async def ascertain_wait_time(client, request, wait_time, repetitions, lowering_
         return name, False
 
 
+async def start_ascertain_wait_time(client, request, wait_time, repetitions, lowering_rate):
+    name = request.__class__.__name__
+    try:
+        result = await ascertain_wait_time(client, request, wait_time, repetitions, lowering_rate)
+    except Exception as e:
+        logging.info(f"Exception occurred at test of {name}: {e.__str__()}")
+        return name, False
+
+    else:
+        if result[1]:
+            return result
+        else:
+            logging.info(f"Restarting {name} with twice the wait time.")
+            return await start_ascertain_wait_time(client, request, wait_time * 2, repetitions, lowering_rate)
+
+
 async def main():
     # Reading configs
-    config = ConfigObj("config.ini")
+    config = yaml.load(open("config.yml", "r"), Loader=yaml.SafeLoader)
+
+    logging.config.dictConfig(config['logging'])
     # Creating client
-    client = await TelegramClient(config['Telegram']['username'], int(config['Telegram']['api_id']),
-                                  config['Telegram']['api_hash']).start()
+    client = await TelegramClient("Telegram", int(config['client']['api_id']),
+                                  config['client']['api_hash']).start()
 
     # Execute the testing of all requests asynchronously
-    results = await asyncio.gather(*(
-        start_ascertain_wait_time(
-            client,
-            RequestDict[request](str(config['Requests'][request]['param'])),
-            int(config['Requests'][request]['wait_time']),
-            int(config['Requests'][request]['repetitions']),
-            float(config['Requests'][request]['lowering_rate'])
+    results = await asyncio.gather(
+        *(
+            start_ascertain_wait_time(
+                client,
+                RequestDict[request](str(config['requests'][request]['param'])),
+                int(config['requests'][request]['wait_time']),
+                int(config['requests'][request]['repetitions']),
+                float(config['requests'][request]['lowering_rate'])
+            )
+            for request in config['requests']
         )
-        for request in config['Requests']
-    ))
+    )
 
     # Print the results
-    print("\nResults:")
+    logging.info("\nResults:")
     for r in results:
-        print("Request:", r[0], ", Best wait time:", r[1])
+        logging.info(f"Request: {r[0]}, Best wait time: {r[1]}")
 
 
 if __name__ == '__main__':
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("Keyboard interrupted.")
+        logging.info("Keyboard interrupted.")

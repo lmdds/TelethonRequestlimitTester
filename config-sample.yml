@@ -1,0 +1,48 @@
+client:
+  api_id: Telegram-API-ID
+  api_hash: Telegram-API-Hash
+
+requests:
+  CheckChatInviteRequest:
+    param: invite_hash
+    wait_time: 100
+    repetitions: 5000
+    lowering_rate: .1
+
+  ResolveUsernameRequest:
+    param: username
+    wait_time: 200
+    repetitions: 5000
+    lowering_rate: .1
+
+  ImportChatInviteRequest:
+    param: invite_hash
+    wait_time: 200
+    repetitions: 5000
+    lowering_rate: .1
+
+logging:
+  version: 1
+  formatters:
+    date_simple:
+      format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+  handlers:
+    console:
+      class: logging.StreamHandler
+      level: DEBUG
+      formatter: date_simple
+      stream: ext://sys.stdout
+    logfile:
+      class: logging.handlers.RotatingFileHandler
+      level: INFO
+      formatter: date_simple
+      filename: request_test.log
+      maxBytes: 1024
+      backupCount: 3
+  loggers:
+    telethon:
+      level: WARNING
+      handlers: [ logfile, console ]
+  root:
+    level: DEBUG
+    handlers: [logfile, console]
