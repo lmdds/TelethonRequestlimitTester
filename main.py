@@ -22,9 +22,9 @@ async def test_wait_time(client, request, wait_time, repetitions):
     try:
         await client(request)
     except FloodWaitError as e:
-        logging.info(f"Initial wait time of {name}: {e.seconds} ({round(e.seconds / 3600, 1)} hours ).")
+        logging.getLogger(name).info(f"Initial wait time: {e.seconds} ({round(e.seconds / 3600, 1)} hours ).")
         await sleep(e.seconds + 1)
-        logging.info(f"Starting now {name}.")
+        logging.getLogger(name).info(f"Starting now.")
         count = -1
     except RPCError:
         pass
@@ -43,21 +43,21 @@ async def test_wait_time(client, request, wait_time, repetitions):
         result = False, count, e.seconds
     else:
         result = True,
-    logging.info(f"Test of {request.__class__.__name__} with wait time {wait_time} finished. Result: {result}")
+    logging.getLogger(name).info(f"Test with wait time {wait_time} finished. Result: {result}")
     return result
 
 
 async def ascertain_wait_time(client, request, wait_time, repetitions, lowering_rate):
     name = request.__class__.__name__
-    logging.info(f"Starting test of {name} with a wait time of {wait_time } seconds. "
-                 f"A successful run would take about {round(wait_time * repetitions / 3600, 1)} hours.")
+    logging.getLogger(name).info(f"Starting test with a wait time of {wait_time} seconds. "
+                                 f"A successful run would take about {round(wait_time * repetitions / 3600, 1)} hours.")
 
     result = await test_wait_time(client, request, wait_time, repetitions)
 
     if result[0]:
         new_wait_time = int(wait_time * (1 - lowering_rate))
         if new_wait_time == wait_time:
-            logging.info(f"{name}: former wait time = new wait time. Returning.")
+            logging.getLogger(name).info(f"Former wait time = new wait time. Returning.")
             return name, wait_time
         else:
             result_rec = await ascertain_wait_time(client, request, new_wait_time,
@@ -75,14 +75,14 @@ async def start_ascertain_wait_time(client, request, wait_time, repetitions, low
     try:
         result = await ascertain_wait_time(client, request, wait_time, repetitions, lowering_rate)
     except Exception as e:
-        logging.info(f"Exception occurred at test of {name}: {e.__str__()}")
+        logging.getLogger(name).info(f"Exception occurred: {e.__str__()}")
         return name, False
 
     else:
         if result[1]:
             return result
         else:
-            logging.info(f"Restarting {name} with twice the wait time.")
+            logging.getLogger(name).info(f"Restarting with twice the wait time.")
             return await start_ascertain_wait_time(client, request, wait_time * 2, repetitions, lowering_rate)
 
 
